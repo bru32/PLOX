@@ -11,29 +11,30 @@ unit uScanner;
 interface
 
 type
-  TTokenType = (
+  TTokenKind = (
     // Single-character tokens.
-    TOKEN_LEFT_PAREN, TOKEN_RIGHT_PAREN, TOKEN_LEFT_BRACE, TOKEN_RIGHT_BRACE,
-    TOKEN_COMMA, TOKEN_DOT, TOKEN_MINUS, TOKEN_PLUS, TOKEN_SEMICOLON,
-    TOKEN_SLASH, TOKEN_STAR,
+    tkLPAREN, tkRPAREN, tkLBRACE, tkRBRACE,
+    tkCOMMA, tkDOT, tkMINUS, tkPLUS, tkSEMICOLON,
+    tkSLASH, tkSTAR,
 
     // One or two character tokens.
-    TOKEN_BANG, TOKEN_BANG_EQUAL, TOKEN_EQUAL, TOKEN_EQUAL_EQUAL,
-    TOKEN_GREATER, TOKEN_GREATER_EQUAL, TOKEN_LESS, TOKEN_LESS_EQUAL,
+    tkBANG, tkBANGEQUAL, tkEQUAL, tkEQUALEQUAL,
+    tkGREATER, tkGREATEREQUAL, tkLESS, tkLESSEQUAL,
 
     // Literals.
-    TOKEN_IDENTIFIER, TOKEN_STRING, TOKEN_NUMBER,
+    tkIDENT, tkSTRING, tkNUMBER,
 
     // Keywords.
-    TOKEN_AND, TOKEN_CLASS, TOKEN_ELSE, TOKEN_FALSE, TOKEN_FOR, TOKEN_FUN,
-    TOKEN_IF, TOKEN_NIL, TOKEN_OR, TOKEN_PRINT, TOKEN_RETURN, TOKEN_SUPER,
-    TOKEN_THIS, TOKEN_TRUE, TOKEN_VAR, TOKEN_WHILE,
+    tkAND, tkCLASS, tkELSE, tkFALSE, tkFOR, tkFUN,
+    tkIF, tkNIL, tkOR, tkPRINT, tkRETURN, tkSUPER,
+    tkTHIS, tkTRUE, tkVAR, tkWHILE,
 
-    TOKEN_ERROR, TOKEN_EOF);
+    // Error and End tokens
+    tkERR, tkEOS);
 
 type
-  TToken = record
-    TokenType: TTokenType;
+  TTokenRec = record
+    kind: TTokenKind;
     start: pchar;
     length: integer;
     line: integer;
@@ -41,29 +42,31 @@ type
 
 type
   TScanner = record
+  private
     sp: pchar;
     cp: pchar;
     line: integer;
-    procedure Init(source: pchar);
     function isAlpha(c: char): boolean;
     function isDigit(c: char): boolean;
-    function isAtEnd: boolean;
-    function advance: char;
+    function atEnd: boolean;
+    function step: char;
     function peek: char;
-    function peekNext: char;
-    function match(expected: char): boolean;
-    function makeToken(TokenType: TTokenType): TToken;
-    function errorToken(const messageStr: pchar): TToken;
-    procedure skipWhitespace;
-    function IsText(Value: string): boolean;
-    function identifierType: TTokenType;
-    function is_identifier: TToken;
-    function is_number: TToken;
-    function is_string: TToken;
-    function getToken: TToken;
+    function spy: char;
+    function matchChar(Value: char): boolean;
+    function makeToken(Value: TTokenKind): TTokenRec;
+    function errToken(Value: pchar): TTokenRec;
+    procedure skipWhite;
+    function isKeyword(Value: string): boolean;
+    function identKind: TTokenKind;
+    function getIdent: TTokenRec;
+    function getNumber: TTokenRec;
+    function getString: TTokenRec;
+  public
+    procedure Init(source: pchar);
+    function getToken: TTokenRec;
   end;
 
-function GetTokenStr(Value: TTokenType): string;
+function GetTokenStr(Value: TTokenKind): string;
 
 implementation
 
@@ -75,11 +78,20 @@ const
   hi_alpha = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
   alpha = lo_alpha + hi_alpha + '_';
   digits = '0123456789';
+  dotChar = '.';
+  quoteChar = '"';
+  spaceChar = ' ';
 
-function GetTokenStr(Value: TTokenType): string;
+  // special symbols
+  ssEOS = Char(0);
+  ssTAB = Char(9);
+  ssLF  = Char(10);
+  ssCR  = Char(13);
+
+function GetTokenStr(Value: TTokenKind): string;
 {- use Rtti to get string from enum }
 begin
-  Result := GetEnumName(TypeInfo(TTokenType), ord(Value))
+  Result := GetEnumName(TypeInfo(TTokenKind), ord(Value))
 end;
 
 procedure TScanner.Init(source: pchar);
@@ -99,15 +111,9 @@ begin
   Result := AnsiPos(c, digits) > 0
 end;
 
-function TScanner.isAtEnd: boolean;
+function TScanner.atEnd: boolean;
 begin
-  Result := self.cp[0] = #0
-end;
-
-function TScanner.advance: char;
-begin
-  Result := self.cp[0];
-  inc(self.cp);
+  Result := self.cp[0] = ssEOS
 end;
 
 function TScanner.peek: char;
@@ -115,54 +121,57 @@ begin
   Result := self.cp[0]
 end;
 
-function TScanner.peekNext: char;
+function TScanner.step: char;
 begin
-  if isAtEnd then
-    Exit(#0);
-  Result := self.cp[1]
-end;
-
-function TScanner.match(expected: char): boolean;
-begin
-  Result := True;
-  if isAtEnd then
-    Exit(False);
-  if self.cp <> expected then
-    Exit(False);
+  Result := peek;
   inc(self.cp)
 end;
 
-function TScanner.makeToken(TokenType: TTokenType): TToken;
+function TScanner.spy: char;
+{- look ahead to next character }
 begin
-  Result.TokenType := TokenType;
+  if atEnd then Exit(ssEOS);
+  Result := self.cp[1]
+end;
+
+function TScanner.matchChar(Value: char): boolean;
+begin
+  Result := True;
+  if atEnd then Exit(False);
+  if self.cp <> Value then Exit(False);
+  inc(self.cp)
+end;
+
+function TScanner.makeToken(Value: TTokenKind): TTokenRec;
+begin
+  Result.kind := Value;
   Result.start := self.sp;
   Result.length := self.cp - self.sp;
   Result.line := self.line
 end;
 
-function TScanner.errorToken(const messageStr: pchar): TToken;
+function TScanner.errToken(Value: pchar): TTokenRec;
 begin
-  Result.TokenType := TOKEN_ERROR;
-  Result.start := messageStr;
-  Result.length := length(messageStr);
+  Result.kind := tkERR;
+  Result.start := Value;
+  Result.length := length(Value);
   Result.line := self.line
 end;
 
-procedure TScanner.skipWhitespace;
+procedure TScanner.skipWhite;
 var
   c: char;
 begin
   while True do begin
     c := peek;
     case c of
-      ' ', #10, #9: advance();
-      #13: begin
+      spaceChar, ssLF, ssTAB: step;
+      ssCR: begin
              inc(self.line);
-             advance;
+             step;
            end;
-      '/': if (peekNext = '/') then begin
-             while ((peek <> '\n') and not isAtEnd) do
-               advance;
+      '/': if (spy = '/') then begin
+             while ((peek <> ssLF) and not atEnd) do step;
            end;
       else
         Exit;
@@ -170,112 +179,106 @@ begin
   end;
 end;
 
-function TScanner.IsText(Value: string): boolean;
+function TScanner.isKeyword(Value: string): boolean;
 var
   s: string;
   k: integer;
 begin
   k := length(Value);
-  SetString(s, self.cp, k);
+  SetString(s, self.sp, self.cp-self.sp);
   Result := SameText(s, Value)
 end;
 
-function TScanner.identifierType: TTokenType;
+function TScanner.identKind: TTokenKind;
 begin
-  Result := TOKEN_IDENTIFIER;
-  if IsText('and') then Exit(TOKEN_AND);
-  if IsText('class') then Exit(TOKEN_CLASS);
-  if IsText('else') then Exit(TOKEN_ELSE);
-  if IsText('false') then Exit(TOKEN_FALSE);
-  if IsText('for') then Exit(TOKEN_FOR);
-  if IsText('fun') then Exit(TOKEN_FUN);
-  if IsText('if') then Exit(TOKEN_IF);
-  if IsText('nil') then Exit(TOKEN_NIL);
-  if IsText('or') then Exit(TOKEN_OR);
-  if IsText('print') then Exit(TOKEN_PRINT);
-  if IsText('return') then Exit(TOKEN_RETURN);
-  if IsText('super') then Exit(TOKEN_SUPER);
-  if IsText('this') then Exit(TOKEN_THIS);
-  if IsText('true') then Exit(TOKEN_TRUE);
-  if IsText('var') then Exit(TOKEN_VAR);
-  if IsText('while') then Exit(TOKEN_WHILE);
+  Result := tkIDENT;
+  if isKeyword('and') then Exit(tkAND);
+  if isKeyword('class') then Exit(tkCLASS);
+  if isKeyword('else') then Exit(tkELSE);
+  if isKeyword('false') then Exit(tkFALSE);
+  if isKeyword('for') then Exit(tkFOR);
+  if isKeyword('fun') then Exit(tkFUN);
+  if isKeyword('if') then Exit(tkIF);
+  if isKeyword('nil') then Exit(tkNIL);
+  if isKeyword('or') then Exit(tkOR);
+  if isKeyword('print') then Exit(tkPRINT);
+  if isKeyword('return') then Exit(tkRETURN);
+  if isKeyword('super') then Exit(tkSUPER);
+  if isKeyword('this') then Exit(tkTHIS);
+  if isKeyword('true') then Exit(tkTRUE);
+  if isKeyword('var') then Exit(tkVAR);
+  if isKeyword('while') then Exit(tkWHILE);
+
 end;
 
-function TScanner.is_identifier: TToken;
+function TScanner.getIdent: TTokenRec;
 begin
-  while (isAlpha(peek) or isDigit(peek)) do
-    advance;
-  Result := makeToken(identifierType)
+  while (isAlpha(peek) or isDigit(peek)) do step;
+  Result := makeToken(identKind)
 end;
 
-function TScanner.is_number: TToken;
+function TScanner.getNumber: TTokenRec;
 begin
-  while (isDigit(peek)) do
-    advance;
-  if (peek = '.') and isDigit(peekNext) then begin
-    advance;
-    while isDigit(peek) do advance;
+  while isDigit(peek) do step;
+  if (peek = dotChar) and isDigit(spy) then begin
+    step;
+    while isDigit(peek) do step;
   end;
-  Result := makeToken(TOKEN_NUMBER);
+  Result := makeToken(tkNUMBER);
 end;
 
-function TScanner.is_string: TToken;
+function TScanner.getString: TTokenRec;
 begin
-  while (peek <> '"') and not isAtEnd do begin
-    if (peek = '\n') then
-      inc(self.line);
-    advance();
+  while (peek <> QuoteChar) and not atEnd do begin
+    if (peek = ssLF) then inc(self.line);
+    step;
   end;
-  if isAtEnd then
-    Exit(errorToken('Unterminated string.'));
-  advance();
-  Result := makeToken(TOKEN_STRING);
+  if atEnd then Exit(errToken('Un-terminated string!'));
+  step;
+  Result := makeToken(tkSTRING);
 end;
 
-function TScanner.getToken: TToken;
+function TScanner.getToken: TTokenRec;
 var
   c: char;
 begin
-  skipWhitespace();
+  skipWhite();
   self.sp := self.cp;
-  if isAtEnd then
-    Exit(makeToken(TOKEN_EOF));
-  c := advance;
-  if isAlpha(c) then
-    Exit(is_identifier);
-  if isDigit(c) then
-    Exit(is_number);
+  if atEnd then Exit(makeToken(tkEOS));
+  c := step;
+  if isAlpha(c) then Exit(getIdent);
+  if isDigit(c) then Exit(getNumber);
   case c of
-    '(': Exit(makeToken(TOKEN_LEFT_PAREN));
-    ')': Exit(makeToken(TOKEN_RIGHT_PAREN));
-    '{': Exit(makeToken(TOKEN_LEFT_BRACE));
-    '}': Exit(makeToken(TOKEN_RIGHT_BRACE));
-    ';': Exit(makeToken(TOKEN_SEMICOLON));
-    ',': Exit(makeToken(TOKEN_COMMA));
-    '.': Exit(makeToken(TOKEN_DOT));
-    '-': Exit(makeToken(TOKEN_MINUS));
-    '+': Exit(makeToken(TOKEN_PLUS));
-    '/': Exit(makeToken(TOKEN_SLASH));
-    '*': Exit(makeToken(TOKEN_STAR));
-    '!': if match('=') then
-           Exit(makeToken(TOKEN_BANG_EQUAL))
+    '(': Exit(makeToken(tkLPAREN));
+    ')': Exit(makeToken(tkRPAREN));
+    '{': Exit(makeToken(tkLBRACE));
+    '}': Exit(makeToken(tkRBRACE));
+    ';': Exit(makeToken(tkSEMICOLON));
+    ',': Exit(makeToken(tkCOMMA));
+    '.': Exit(makeToken(tkDOT));
+    '-': Exit(makeToken(tkMINUS));
+    '+': Exit(makeToken(tkPLUS));
+    '/': Exit(makeToken(tkSLASH));
+    '*': Exit(makeToken(tkSTAR));
+    '!': if matchChar('=') then
+           Exit(makeToken(tkBANGEQUAL))
          else
-           Exit(makeToken(TOKEN_BANG));
-    '=': if match('=') then
-           Exit(makeToken(TOKEN_EQUAL_EQUAL))
+           Exit(makeToken(tkBANG));
+    '=': if matchChar('=') then
+           Exit(makeToken(tkEQUALEQUAL))
          else
-           Exit(makeToken(TOKEN_EQUAL));
-    '<': if match('=') then
-           Exit(makeToken(TOKEN_LESS_EQUAL))
+           Exit(makeToken(tkEQUAL));
+    '<': if matchChar('=') then
+           Exit(makeToken(tkLESSEQUAL))
          else
-           Exit(makeToken(TOKEN_LESS));
-    '>': if match('=') then
-           Exit(makeToken(TOKEN_GREATER_EQUAL))
+           Exit(makeToken(tkLESS));
+    '>': if matchChar('=') then
+           Exit(makeToken(tkGREATEREQUAL))
          else
-           Exit(makeToken(TOKEN_GREATER));
-    '"': Exit(is_string);
+           Exit(makeToken(tkGREATER));
+    '"': Exit(getString);
   end;
-  Result := errorToken('Unexpected character.');
+  Result := errToken('Unexpected character!');
 end;
 
 end.

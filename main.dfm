@@ -2,8 +2,8 @@ object MainForm: TMainForm
   Left = 0
   Top = 0
   Caption = 'demo'
-  ClientHeight = 452
-  ClientWidth = 853
+  ClientHeight = 573
+  ClientWidth = 895
   Color = clBtnFace
   Font.Charset = DEFAULT_CHARSET
   Font.Color = clWindowText
@@ -11,16 +11,33 @@ object MainForm: TMainForm
   Font.Name = 'Tahoma'
   Font.Style = []
   OldCreateOrder = False
+  DesignSize = (
+    895
+    573)
   PixelsPerInch = 96
   TextHeight = 13
   object Memo1: TMemo
     Left = 8
     Top = 39
     Width = 433
-    Height = 394
+    Height = 515
+    Anchors = [akLeft, akTop, akBottom]
+    Font.Charset = DEFAULT_CHARSET
+    Font.Color = 8421440
+    Font.Height = -17
+    Font.Name = 'Consolas'
+    Font.Style = []
     Lines.Strings = (
-      'print 1 + 2;')
+      'fn test(a) {'
+      '  return 2*a;'
+      '}'
+      ''
+      'x = test(2.0);'
+      'y = tesy(3.0);'
+      'z = x + y;')
+    ParentFont = False
     TabOrder = 0
+    ExplicitHeight = 670
   end
   object Button1: TButton
     Left = 8
@@ -34,8 +51,17 @@ object MainForm: TMainForm
   object Memo2: TMemo
     Left = 447
     Top = 39
-    Width = 398
-    Height = 394
+    Width = 440
+    Height = 515
+    Anchors = [akLeft, akTop, akRight, akBottom]
+    Font.Charset = DEFAULT_CHARSET
+    Font.Color = 8421440
+    Font.Height = -17
+    Font.Name = 'Consolas'
+    Font.Style = []
+    ParentFont = False
     TabOrder = 2
+    ExplicitWidth = 510
+    ExplicitHeight = 670
   end
 end

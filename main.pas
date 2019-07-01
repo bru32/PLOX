@@ -3,14 +3,14 @@ unit main;
 interface
 
 uses
-  Windows, Messages, SysUtils, Variants, Classes, Graphics, Controls, Forms,
-  Dialogs, StdCtrls;
+  Windows, Messages, SysUtils, Variants, Classes, Graphics, Controls,
+  Forms, Dialogs, StdCtrls;
 
 type
   TMainForm = class(TForm)
     Memo1: TMemo;
-    Button1: TButton;
     Memo2: TMemo;
+    Button1: TButton;
     procedure Button1Click(Sender: TObject);
   private
   public
@@ -28,15 +28,16 @@ uses
 
 procedure TMainForm.Button1Click(Sender: TObject);
 var
-  token: TToken;
+  tk: TTokenRec;
   scan: TScanner;
 begin
-  scan.init(PChar(Memo1.Text));
+  Memo2.Clear;
+  scan.Init(PChar(Memo1.Text));
   while True do begin
-    token := scan.getToken();
-    Memo2.Lines.Add(format('%s %.*s', [GetTokenStr(token.TokenType), token.length, token.start]));
-    if (token.TokenType = TOKEN_ERROR) then Break;
-    if (token.TokenType = TOKEN_EOF) then Break;
+    tk := scan.getToken();
+    Memo2.Lines.Add(format('%s %.*s', [GetTokenStr(tk.kind), tk.length, tk.start]));
+    if (tk.kind = tkERR) then Break;
+    if (tk.kind = tkEOS) then Break;
   end;
 end;
 
